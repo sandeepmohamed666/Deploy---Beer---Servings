@@ -19,12 +19,17 @@ Q. Deployment activity: Train and deploy on streamlit cloud a regression model  
 
 import warnings
 warnings.filterwarnings('ignore')
+import streamlit as st
 
 import numpy as np
 import pandas as pd
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import joblib 
+import pillow
+import pickle
 
 from sklearn.model_selection import train_test_split
 
