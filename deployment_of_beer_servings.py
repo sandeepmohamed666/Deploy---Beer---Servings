@@ -8,349 +8,600 @@ Original file is located at
 
 Q. Deployment activity: Train and deploy on streamlit cloud a regression model  on beer servings data. Use total_liters_of_pure_alchohol as target column. Share the public URL of your web app in discord. The web app should have a title, a welcome image displayed. Accept relevant user input on beer servings data and predict the output
 """
-
-# ============================================================
-# DEPLOYMENT-READY BEER SERVINGS REGRESSION PROJECT
-# ============================================================
-
-# =========================
-# 1. IMPORT LIBRARIES
-# =========================
-
-import warnings
-warnings.filterwarnings('ignore')
 import streamlit as st
-import streamlit as st
-st.title("App is running")
-st.write("Debug test")
-
-import numpy as np
 import pandas as pd
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-import joblib 
-from PIL import Image
-import pickle
-
+import numpy as np
 from sklearn.model_selection import train_test_split
-
-from sklearn.preprocessing import (
-    LabelEncoder,
-    StandardScaler
-)
-
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score
 
-from sklearn.linear_model import (
-    LinearRegression,
-    Ridge,
-    Lasso
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score
+
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
+st.set_page_config(page_title="Beer Servings Prediction", layout="centered")
+
+# -------------------------------------------------
+# TITLE
+# -------------------------------------------------
+st.title("🍺 Beer Servings Prediction App")
+
+st.subheader("Predict Total Liters of Pure Alcohol")
+
+# -------------------------------------------------
+# WELCOME IMAGE
+# -------------------------------------------------
+st.image(
+    "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b",
+    use_container_width=True
 )
 
-from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score
-)
+# -------------------------------------------------
+# LOAD DATA
+# -------------------------------------------------
+df = pd.read_csv("beer-servings (1).csv",index_col=0)
 
-# =========================
-# 2. LOAD DATASET
-# =========================
+# -------------------------------------------------
+# HANDLE MISSING VALUES
+# -------------------------------------------------
+# Numeric columns
+num_cols = df.select_dtypes(include=["int64", "float64"]).columns
 
-DATA_PATH = 'beer-servings (1).csv'
-
-data = pd.read_csv(DATA_PATH)
-
-# =========================
-# 3. BASIC INSPECTION
-# =========================
-
-print("\nDataset Shape")
-print(data.shape)
-
-print("\nFirst 5 Rows")
-print(data.head())
-
-print("\nMissing Values")
-print(data.isnull().sum())
-
-# =========================
-# 4. DROP UNNECESSARY COLUMNS
-# =========================
-
-if 'Unnamed: 0' in data.columns:
-
-    data.drop(columns=['Unnamed: 0'], inplace=True)
-
-# =========================
-# 5. REMOVE DUPLICATES
-# =========================
-
-data.drop_duplicates(inplace=True)
-
-# =========================
-# 6. SPLIT NUMERICAL & CATEGORICAL COLUMNS
-# =========================
-
-num_cols = data.select_dtypes(
-    include=['int64', 'float64']
-).columns.tolist()
-
-cat_cols = data.select_dtypes(
-    include=['object']
-).columns.tolist()
-
-print("\nNumerical Columns")
-print(num_cols)
-
-print("\nCategorical Columns")
-print(cat_cols)
-
-# =========================
-# 7. HANDLE MISSING VALUES
-# =========================
-
-# Numerical -> Median Imputation
-
-num_imputer = SimpleImputer(strategy='median')
-
-data[num_cols] = num_imputer.fit_transform(
-    data[num_cols]
-)
-
-# Categorical -> Most Frequent
-
-if len(cat_cols) > 0:
-
-    cat_imputer = SimpleImputer(
-        strategy='most_frequent'
-    )
-
-    data[cat_cols] = cat_imputer.fit_transform(
-        data[cat_cols]
-    )
-
-# =========================
-# 8. ENCODE CATEGORICAL VARIABLES
-# =========================
-
-label_encoders = {}
-
-for col in cat_cols:
-
-    encoder = LabelEncoder()
-
-    data[col] = encoder.fit_transform(
-        data[col]
-    )
-
-    label_encoders[col] = encoder
-
-# =========================
-# 9. OUTLIER TREATMENT USING IQR
-# =========================
-
+# Fill numeric missing values with median
 for col in num_cols:
+    df[col] = df[col].fillna(df[col].median())
 
-    Q1 = data[col].quantile(0.25)
+# Categorical columns
+cat_cols = df.select_dtypes(include=["object"]).columns
 
-    Q3 = data[col].quantile(0.75)
+# Fill categorical missing values with mode
+for col in cat_cols:
+    df[col] = df[col].fillna(df[col].mode()[0])
 
-    IQR = Q3 - Q1
+# -------------------------------------------------
+# TARGET AND FEATURES
+# -------------------------------------------------
+target = "total_litres_of_pure_alcohol"
 
-    lower = Q1 - 1.5 * IQR
+X = df.drop(target, axis=1)
+y = df[target]
 
-    upper = Q3 + 1.5 * IQR
+# -------------------------------------------------
+# PREPROCESSING
+# -------------------------------------------------
+numeric_features = X.select_dtypes(include=["int64", "float64"]).columns
+categorical_features = X.select_dtypes(include=["object"]).columns
 
-    data[col] = np.where(
-        data[col] < lower,
-        lower,
-        data[col]
-    )
+numeric_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="median"))
+    ]
+)
 
-    data[col] = np.where(
-        data[col] > upper,
-        upper,
-        data[col]
-    )
+categorical_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("onehot", OneHotEncoder(handle_unknown="ignore"))
+    ]
+)
 
-# =========================
-# 10. FEATURE-TARGET SPLIT
-# =========================
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_transformer, numeric_features),
+        ("cat", categorical_transformer, categorical_features)
+    ]
+)
 
-TARGET = 'total_litres_of_pure_alcohol'
+# -------------------------------------------------
+# MODEL PIPELINE
+# -------------------------------------------------
+model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("regressor", RandomForestRegressor(
+            n_estimators=200,
+            random_state=42
+        ))
+    ]
+)
 
-X = data.drop(TARGET, axis=1)
-
-y = data[TARGET]
-
-# =========================
-# 12. TRAIN-TEST SPLIT
-# =========================
-
+# -------------------------------------------------
+# TRAIN TEST SPLIT
+# -------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
-    X, # Split original X before scaling
+    X,
     y,
     test_size=0.2,
     random_state=42
 )
 
-# =========================
-# 11. FEATURE SCALING (Moved and corrected)
-# =========================
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train) # Fit only on training data
-X_test_scaled = scaler.transform(X_test)       # Transform test data using fitted scaler
+# -------------------------------------------------
+# TRAIN MODEL
+# -------------------------------------------------
+model.fit(X_train, y_train)
+df.drop(columns=['Unnamed: 0', 'continent'], errors='ignore', inplace=True)
+# -------------------------------------------------
+# MODEL SCORE
+# -------------------------------------------------
+y_pred = model.predict(X_test)
+score = r2_score(y_test, y_pred)
 
-# Update X_train and X_test to use the scaled versions
-X_train = X_train_scaled
-X_test = X_test_scaled
+st.success(f"Model Trained Successfully ✅")
+st.info(f"R² Score : {score:.2f}")
 
-# =========================
-# 13. MODEL DEFINITIONS
-# =========================
+# -------------------------------------------------
+# USER INPUTS
+# -------------------------------------------------
+# st.header("Enter Beer Consumption Details")
 
-models = {
-    'Linear Regression': LinearRegression(),
-    'Ridge Regression': Ridge(alpha=1.0),
-    'Lasso Regression': Lasso(alpha=0.01)
-}
+# country = st.selectbox(
+#     "Country",
+#     sorted(df["country"].unique())
+# )
 
-results = []
+# beer_servings = st.number_input(
+#     "Beer Servings",
+#     min_value=0,
+#     max_value=500,
+#     value=100
+# )
 
-trained_models = {}
+# spirit_servings = st.number_input(
+#     "Spirit Servings",
+#     min_value=0,
+#     max_value=500,
+#     value=50
+# )
 
-# =========================
-# 14. TRAIN & EVALUATE MODELS
-# =========================
+# wine_servings = st.number_input(
+#     "Wine Servings",
+#     min_value=0,
+#     max_value=500,
+#     value=50
+# )
 
-for model_name, model in models.items():
+# -------------------------------------------------
+# PREDICTION
+# -------------------------------------------------
+# User Inputs
+country = st.text_input("Country", "India")
 
-    # Train Model
-    model.fit(X_train, y_train) # X_train is now X_train_scaled
+beer_servings = st.number_input("Beer Servings", min_value=0, value=100)
 
-    # Predictions
-    y_pred = model.predict(X_test)
+spirit_servings = st.number_input("Spirit Servings", min_value=0, value=50)
 
-    # Evaluation Metrics
-    mse = mean_squared_error(y_test, y_pred)
+wine_servings = st.number_input("Wine Servings", min_value=0, value=30)
 
-    rmse = np.sqrt(mse)
-
-    mae = mean_absolute_error(y_test, y_pred)
-
-    r2 = r2_score(y_test, y_pred)
-
-    # Save Results
-    results.append({
-        'Model': model_name,
-        'MSE': round(mse, 4),
-        'RMSE': round(rmse, 4),
-        'MAE': round(mae, 4),
-        'R2 Score': round(r2, 4)
-    })
-
-    trained_models[model_name] = model
-
-# =========================
-# 15. RESULTS TABLE
-# =========================
-
-result_df = pd.DataFrame(results)
-
-print("\nModel Performance")
-print(result_df)
-
-# =========================
-# 16. SELECT BEST MODEL
-# =========================
-
-best_model_name = result_df.sort_values(
-    by='R2 Score',
-    ascending=False
-).iloc[0]['Model']
-
-best_model = trained_models[best_model_name]
-
-print(f"\nBest Model: {best_model_name}")
-
-# =========================
-# 17. FINAL PREDICTIONS
-# =========================
-
-final_predictions = best_model.predict(X_test)
-
-# =========================
-# 18. ACTUAL vs PREDICTED PLOT
-# =========================
-
-plt.figure(figsize=(8,6))
-
-sns.scatterplot(
-    x=y_test,
-    y=final_predictions
+continent = st.selectbox(
+    "Continent",
+    ["Asia", "Europe", "Africa", "North America", "South America", "Oceania"]
 )
 
-plt.xlabel('Actual Values')
-
-plt.ylabel('Predicted Values')
-
-plt.title(f'Actual vs Predicted ({best_model_name})')
-
-plt.show()
-
-# =========================
-# 19. RESIDUAL DISTRIBUTION
-# =========================
-
-residuals = y_test - final_predictions
-
-plt.figure(figsize=(8,6))
-
-sns.histplot(residuals, kde=True)
-
-plt.title('Residual Distribution')
-
-plt.xlabel('Residuals')
-
-plt.show()
-
-# =========================
-# 20. FEATURE COEFFICIENTS
-# =========================
-
-if hasattr(best_model, 'coef_'):
-
-    coef_df = pd.DataFrame({
-        'Feature': X.columns,
-        'Coefficient': best_model.coef_
-    })
-
-    coef_df = coef_df.sort_values(
-        by='Coefficient',
-        ascending=False
-    )
-
-    print("\nFeature Coefficients")
-    print(coef_df)
-
-    print("\nIntercept")
-    print(best_model.intercept_)
-
-# =========================
-# 21. SAMPLE PREDICTIONS
-# =========================
-
-sample_predictions = pd.DataFrame({
-    'Actual': y_test.iloc[:10].values,
-    'Predicted': final_predictions[:10]
+# Create dataframe for prediction
+input_data = pd.DataFrame({
+    'country': [country],
+    'beer_servings': [beer_servings],
+    'spirit_servings': [spirit_servings],
+    'wine_servings': [wine_servings],
+    'continent': [continent]
 })
 
-print("\nSample Predictions")
-print(sample_predictions)
+# Prediction
+if st.button("Predict"):
+    prediction = model.predict(input_data)
 
-# ============================================================
-# END OF PROJECT
-# ============================================================
+    st.success(
+        f"Predicted Total Liters of Pure Alcohol: {prediction[0]:.2f}"
+    )
+# if st.button("Predict Alcohol Consumption"):
+
+#     input_data = pd.DataFrame({
+#         "country": [country],
+#         "beer_servings": [beer_servings],
+#         "spirit_servings": [spirit_servings],
+#         "wine_servings": [wine_servings]
+#     })
+
+#     prediction = model.predict(input_data)
+
+#     st.success(
+#         f"Predicted Total Liters of Pure Alcohol: {prediction[0]:.2f}"
+#     )
+
+# input_data = pd.DataFrame({
+#     'Unnamed: 0': [0],
+#     'country': [country],
+#     'beer_servings': [beer_servings],
+#     'spirit_servings': [spirit_servings],
+#     'wine_servings': [wine_servings],
+#     'continent': [continent]
+# })
+
+#     Create input dataframe with ALL columns used during training
+# input_data = pd.DataFrame({
+#     'Unnamed: 0': [0],          # dummy value
+#     'continent': ['Asia'],      # default category
+#     'beer_servings': [beer_servings],
+#     'spirit_servings': [spirit_servings],
+#     'wine_servings': [wine_servings]
+# })
+
+# # Predict
+# prediction = model.predict(input_data)
+
+# st.success(f"Predicted Total Liters of Pure Alcohol: {prediction[0]:.2f}")
+# # =========================
+# # 2. LOAD DATASET
+# # =========================
+
+# DATA_PATH = 'beer-servings (1).csv'
+
+# data = pd.read_csv(DATA_PATH)
+
+# joblib.dump(data, "beer_servings.pkl")
+
+# # with open("beer_servings.pkl", "wb") as f:
+# #     pickle.dump(data, f)
+# # =========================
+# # 3. BASIC INSPECTION
+# # =========================
+
+# print("\nDataset Shape")
+# print(data.shape)
+
+# print("\nFirst 5 Rows")
+# print(data.head())
+
+# print("\nMissing Values")
+# print(data.isnull().sum())
+
+# # =========================
+# # 4. DROP UNNECESSARY COLUMNS
+# # =========================
+
+# if 'Unnamed: 0' in data.columns:
+
+#     data.drop(columns=['Unnamed: 0'], inplace=True)
+
+# # =========================
+# # 5. REMOVE DUPLICATES
+# # =========================
+
+# data.drop_duplicates(inplace=True)
+
+# # =========================
+# # 6. SPLIT NUMERICAL & CATEGORICAL COLUMNS
+# # =========================
+
+# num_cols = data.select_dtypes(
+#     include=['int64', 'float64']
+# ).columns.tolist()
+
+# cat_cols = data.select_dtypes(
+#     include=['object']
+# ).columns.tolist()
+
+# print("\nNumerical Columns")
+# print(num_cols)
+
+# print("\nCategorical Columns")
+# print(cat_cols)
+
+# # =========================
+# # 7. HANDLE MISSING VALUES
+# # =========================
+
+# # Numerical -> Median Imputation
+
+# num_imputer = SimpleImputer(strategy='median')
+
+# data[num_cols] = num_imputer.fit_transform(
+#     data[num_cols]
+# )
+
+# # Categorical -> Most Frequent
+
+# if len(cat_cols) > 0:
+
+#     cat_imputer = SimpleImputer(
+#         strategy='most_frequent'
+#     )
+
+#     data[cat_cols] = cat_imputer.fit_transform(
+#         data[cat_cols]
+#     )
+
+# # =========================
+# # 8. ENCODE CATEGORICAL VARIABLES
+# # =========================
+
+# label_encoders = {}
+
+# for col in cat_cols:
+
+#     encoder = LabelEncoder()
+
+#     data[col] = encoder.fit_transform(
+#         data[col]
+#     )
+
+#     label_encoders[col] = encoder
+
+# # =========================
+# # 9. OUTLIER TREATMENT USING IQR
+# # =========================
+
+# for col in num_cols:
+
+#     Q1 = data[col].quantile(0.25)
+
+#     Q3 = data[col].quantile(0.75)
+
+#     IQR = Q3 - Q1
+
+#     lower = Q1 - 1.5 * IQR
+
+#     upper = Q3 + 1.5 * IQR
+
+#     data[col] = np.where(
+#         data[col] < lower,
+#         lower,
+#         data[col]
+#     )
+
+#     data[col] = np.where(
+#         data[col] > upper,
+#         upper,
+#         data[col]
+#     )
+
+# # =========================
+# # 10. FEATURE-TARGET SPLIT
+# # =========================
+
+# TARGET = 'total_litres_of_pure_alcohol'
+
+# X = data.drop(TARGET, axis=1)
+
+# y = data[TARGET]
+
+# # =========================
+# # 12. TRAIN-TEST SPLIT
+# # =========================
+
+# X_train, X_test, y_train, y_test = train_test_split(
+#     X, # Split original X before scaling
+#     y,
+#     test_size=0.2,
+#     random_state=42
+# )
+
+# # =========================
+# # 11. FEATURE SCALING (Moved and corrected)
+# # =========================
+# scaler = StandardScaler()
+# X_train_scaled = scaler.fit_transform(X_train) # Fit only on training data
+# X_test_scaled = scaler.transform(X_test)       # Transform test data using fitted scaler
+
+# # Update X_train and X_test to use the scaled versions
+# X_train = X_train_scaled
+# X_test = X_test_scaled
+
+# # =========================
+# # 13. MODEL DEFINITIONS
+# # =========================
+
+# models = {
+#     'Linear Regression': LinearRegression(),
+#     'Ridge Regression': Ridge(alpha=1.0),
+#     'Lasso Regression': Lasso(alpha=0.01)
+# }
+
+# results = []
+
+# trained_models = {}
+
+# # =========================
+# # 14. TRAIN & EVALUATE MODELS
+# # =========================
+
+# for model_name, model in models.items():
+
+#     # Train Model
+#     model.fit(X_train, y_train) # X_train is now X_train_scaled
+
+#     # Predictions
+#     y_pred = model.predict(X_test)
+
+#     # Evaluation Metrics
+#     mse = mean_squared_error(y_test, y_pred)
+
+#     rmse = np.sqrt(mse)
+
+#     mae = mean_absolute_error(y_test, y_pred)
+
+#     r2 = r2_score(y_test, y_pred)
+
+#     # Save Results
+#     results.append({
+#         'Model': model_name,
+#         'MSE': round(mse, 4),
+#         'RMSE': round(rmse, 4),
+#         'MAE': round(mae, 4),
+#         'R2 Score': round(r2, 4)
+#     })
+
+#     trained_models[model_name] = model
+
+# # =========================
+# # 15. RESULTS TABLE
+# # =========================
+
+# result_df = pd.DataFrame(results)
+
+# print("\nModel Performance")
+# print(result_df)
+
+# # =========================
+# # 16. SELECT BEST MODEL
+# # =========================
+
+# best_model_name = result_df.sort_values(
+#     by='R2 Score',
+#     ascending=False
+# ).iloc[0]['Model']
+
+# best_model = trained_models[best_model_name]
+
+# print(f"\nBest Model: {best_model_name}")
+
+# # =========================
+# # 17. FINAL PREDICTIONS
+# # =========================
+
+# final_predictions = best_model.predict(X_test)
+
+# # =========================
+# # 18. ACTUAL vs PREDICTED PLOT
+# # =========================
+
+# plt.figure(figsize=(8,6))
+
+# sns.scatterplot(
+#     x=y_test,
+#     y=final_predictions
+# )
+
+# plt.xlabel('Actual Values')
+
+# plt.ylabel('Predicted Values')
+
+# plt.title(f'Actual vs Predicted ({best_model_name})')
+
+# plt.show()
+
+# # =========================
+# # 19. RESIDUAL DISTRIBUTION
+# # =========================
+
+# residuals = y_test - final_predictions
+
+# plt.figure(figsize=(8,6))
+
+# sns.histplot(residuals, kde=True)
+
+# plt.title('Residual Distribution')
+
+# plt.xlabel('Residuals')
+
+# plt.show()
+
+# # =========================
+# # 20. FEATURE COEFFICIENTS
+# # =========================
+
+# if hasattr(best_model, 'coef_'):
+
+#     coef_df = pd.DataFrame({
+#         'Feature': X.columns,
+#         'Coefficient': best_model.coef_
+#     })
+
+#     coef_df = coef_df.sort_values(
+#         by='Coefficient',
+#         ascending=False
+#     )
+
+#     print("\nFeature Coefficients")
+#     print(coef_df)
+
+#     print("\nIntercept")
+#     print(best_model.intercept_)
+
+# # =========================
+# # 21. SAMPLE PREDICTIONS
+# # =========================
+
+# sample_predictions = pd.DataFrame({
+#     'Actual': y_test.iloc[:10].values,
+#     'Predicted': final_predictions[:10]
+# })
+
+# print("\nSample Predictions")
+# print(sample_predictions)
+# # Load model
+# file_name = "bear_servings.pkl"
+# with open(path.join("model", file_name), "rb") as f:
+#     bear_servings = pickle.load(f)
+
+# # Input features (based on beer-servings dataset)
+# beer = st.number_input("Beer Servings")
+# spirit = st.number_input("Spirit Servings")
+# wine = st.number_input("Wine Servings")
+# total_alcohol = st.number_input("Total Litres of Pure Alcohol")
+
+# # Prediction
+# if st.button("Predict"):
+#     input_data = np.array([[beer, spirit, wine, total_alcohol]])
+#     pred = model.predict(input_data)
+
+#     st.write("Predicted Value:", pred[0])
+
+
+# # # -----------------------------
+# # # Load MODEL
+# # # -----------------------------
+# # model_file = "lr_model.pkl"
+
+# # with open(os.path.join("model", model_file), "rb") as f:
+# #     model = pickle.load(f)
+
+# # # -----------------------------
+# # # Load DATA (.pkl created using joblib.dump)
+# # # -----------------------------
+# # data = joblib.load("beer_servings.pkl")
+
+# # st.write("Dataset Preview")
+# # st.dataframe(data)
+
+# # # -----------------------------
+# # # Input features
+# # # -----------------------------
+# # beer = st.number_input("Beer Servings")
+# # spirit = st.number_input("Spirit Servings")
+# # wine = st.number_input("Wine Servings")
+# # total_alcohol = st.number_input("Total Litres of Pure Alcohol")
+
+# # # -----------------------------
+# # # Prediction
+# # # -----------------------------
+# # if st.button("Predict"):
+# #     input_data = np.array([[beer, spirit, wine, total_alcohol]])
+# #     pred = model.predict(input_data)
+
+# #     st.success(f"Predicted Value: {pred[0]}")
+# # ============================================================
+# # END OF PROJECT
+# # ============================================================  
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+#                                python -m streamlit run deployment_of_beer_servings.py
