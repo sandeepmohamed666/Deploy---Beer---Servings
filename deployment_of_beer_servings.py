@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import joblib 
-import pillow
+from PIL import Image
 import pickle
 
 from sklearn.model_selection import train_test_split
@@ -56,7 +56,7 @@ from sklearn.metrics import (
 # 2. LOAD DATASET
 # =========================
 
-DATA_PATH = '/content/drive/MyDrive/ICTAK-DSA-B9/beer-servings (1).csv'
+DATA_PATH = 'beer-servings (1).csv'
 
 data = pd.read_csv(DATA_PATH)
 
@@ -184,23 +184,26 @@ X = data.drop(TARGET, axis=1)
 y = data[TARGET]
 
 # =========================
-# 11. FEATURE SCALING
-# =========================
-
-scaler = StandardScaler()
-
-X_scaled = scaler.fit_transform(X)
-
-# =========================
 # 12. TRAIN-TEST SPLIT
 # =========================
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled,
+    X, # Split original X before scaling
     y,
     test_size=0.2,
     random_state=42
 )
+
+# =========================
+# 11. FEATURE SCALING (Moved and corrected)
+# =========================
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train) # Fit only on training data
+X_test_scaled = scaler.transform(X_test)       # Transform test data using fitted scaler
+
+# Update X_train and X_test to use the scaled versions
+X_train = X_train_scaled
+X_test = X_test_scaled
 
 # =========================
 # 13. MODEL DEFINITIONS
@@ -223,7 +226,7 @@ trained_models = {}
 for model_name, model in models.items():
 
     # Train Model
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train) # X_train is now X_train_scaled
 
     # Predictions
     y_pred = model.predict(X_test)
