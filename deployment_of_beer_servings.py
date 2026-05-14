@@ -20,6 +20,9 @@ Q. Deployment activity: Train and deploy on streamlit cloud a regression model  
 import warnings
 warnings.filterwarnings('ignore')
 import streamlit as st
+import streamlit as st
+st.title("App is running")
+st.write("Debug test")
 
 import numpy as np
 import pandas as pd
